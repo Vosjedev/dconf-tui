@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 
+[[ "$BASH" != *'/bash' ]] && {
+    echo "This script is not running in bash! Please run me using bash."
+    exit 3
+}
+
 path='/'
 
+for dep in bash fzf dconf tput; do
+    if ! command -v "$dep" >/dev/null; then
+        echo "Command $dep not found. Please install it and retry."
+        exit 2
+    fi
+done
 
 function preview {
     path="$1"
