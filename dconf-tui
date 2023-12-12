@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+
+path='/'
+
+
+function preview {
+    path="$1"
+    if [[ "$path" == *'/../' ]]; then
+        path="${path:0:-1}"
+        path="${path%/*/*}/"
+    fi
+
+    echo "Path: $path"
+    
+    if [[ "$1" == *'/' ]]; then
+        echo -e "Type: dir\nContent:\n"
+        dconf list "$path"
+    else
+        echo -e "Type: key\nContent:\n"
+        dconf read "$path"
+    fi
+    exit
+}
+
+export FZF_DEFAULT_OPTS="--layout reverse --info inline-right --no-clear --preview-window border-left --color gutter:-1,header:white"
+
+function action {
+    function log {
+        tput rmcup
+        echo -e "$@"
+        tput smcup
+    }
+    while true; do
+        val="$(dconf read "$path$r")"
+        act="$({
+            echo -e "Path: $1\nVal:\n$val\n\nActions:\nChange value\nReset\nWatch changes\n\nReturn" | \
+            fzf \
+            --header-lines 5
+        })"
+        case "$act" in
+            'Change value')
+                tput clear
+                echo -e "\n\nModifying $path$r\nCurrent value:\n$val\n\n"
+                echo "Enter a new value:"
+                read -re -p "> " -i "$val" nval
+                echo -e "\nChanging to\n$nval\n"
+                read -rsn1 -p "Confirm [y/n]?" yn
+                case "$yn" in
+                    y|Y) echo "Writing..."; dconf write "$path$r" "$nval" && { echo done; log "Changed $path$r from\n$val\nto\n$nval\n"; } ;;
+                    n|N) echo "Canceled." ;;
+                    * ) echo "Unknown key, canceled."
+                esac
+                read -rst2 -p "Press enter..."
+            ;;
+            'Reset')
+                tput clear
+                echo -e "\n\nResetting $path$r\nCurrent value:\n$val\n\n"
+                read -rsn1 -p "Confirm [y/n]?" yn
+                case "$yn" in
+                    y|Y) echo "Writing..."; dconf reset "$path$r" && { echo done; log "Reset $path$r\n"; } ;;
+                    n|N) echo "Canceled." ;;
+                    * ) echo "Unknown key, canceled."
+                esac
+                read -rst2 -p "Press enter..."
+            ;;
+            'Watch changes') 
+                tput clear
+                echo "Watching $path$r"
+                dconf watch "$path$r" &
+                trap "kill $!" SIGINT
+                wait
+            ;;
+            'Return') return ;;
+        esac
+    done
+}
+
+function main {
+
+case "$(echo -e "Dconf is a very powerfull tool. Please handle with care,\nYou could break your system.\nQuit\nOke, continue" | fzf --header-lines 2)" in
+    'Quit') tput rmcup; exit ;;
+    'Oke, continue') : ;;
+esac
+
+while true; do
+
+r="$({
+    if [[ "$path" != / ]]; then echo ../; else echo "> Quit"; fi
+    dconf list "$path"; } | \
+    fzf \
+    --preview "bash '$0' preview '$path' {}" --preview-window wrap\
+    --bind 'load:down' \
+    --prompt "$path"
+)"
+[[ "$?" == 130 ]] && break
+if [[ "$r" == '> Quit' ]] && [[ "$path" == / ]]; then break
+elif [[ "$r" == '../' ]]; then
+    path="${path:0:-1}"
+    path="${path%/*}/"
+elif [[ "$r" == *'/' ]]; then
+    path="$path$r"
+else
+    action "$path$r"
+fi
+
+done
+tput rmcup
+}
+
+
+
+case "$1" in
+    preview) preview "$2$3" ;;
+    '') main
+esac
+exit
+
+
